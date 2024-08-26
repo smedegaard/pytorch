@@ -1360,7 +1360,8 @@ static inline int64_t get_mkldnn_matmul_min_dim() {
       // Minimum dimension requirement for MKLDNN; derived based on experiments.
       // By default, it's only enabled on Neoverse V1.
 #if !defined(__s390x__)  && !defined(__powerpc__)
-      if (cpuinfo_initialize() && cpuinfo_get_uarchs_count() == 1 && cpuinfo_get_uarch(0)->uarch == cpuinfo_uarch_neoverse_v1) {
+      if (cpuinfo_initialize() && cpuinfo_get_uarchs_count() == 1 &&
+          (cpuinfo_get_uarch(0)->uarch == cpuinfo_uarch_neoverse_v1 || cpuinfo_get_uarch(0)->uarch == cpuinfo_uarch_neoverse_v2)) {
         return 8;
       }
 #endif
@@ -1379,7 +1380,8 @@ static inline int64_t get_mkldnn_matmul_min_size() {
       // Minimum size requirement for MKLDNN; derived based on experiments.
       // By default, it's only enabled on Neoverse V1.
 #if !defined(__s390x__)  && !defined(__powerpc__)
-      if (cpuinfo_initialize() && cpuinfo_get_uarchs_count() == 1 && cpuinfo_get_uarch(0)->uarch == cpuinfo_uarch_neoverse_v1) {
+      if (cpuinfo_initialize() && cpuinfo_get_uarchs_count() == 1 &&
+          (cpuinfo_get_uarch(0)->uarch == cpuinfo_uarch_neoverse_v1 || cpuinfo_get_uarch(0)->uarch == cpuinfo_uarch_neoverse_v2)) {
         return 8 * 1024;
       }
 #endif
