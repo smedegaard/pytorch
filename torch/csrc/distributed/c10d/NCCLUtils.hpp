@@ -10,6 +10,7 @@
 #include <thread>
 
 #include <ATen/ATen.h>
+#include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAEvent.h>
 #include <c10/util/Exception.h>
 #include <nccl.h>
@@ -219,7 +220,6 @@ TORCH_API std::string getNcclVersion();
 TORCH_API std::string ncclGetErrorWithVersion(ncclResult_t error);
 bool nccl_use_nonblocking();
 int nccl_nonblocking_timeout();
-bool shouldBroadcastNCCLUniqueID(bool isSendRecvSelf);
 
 // Provides additional detail into NCCL error codes based on when these are
 // thrown in the NCCL codebase.
@@ -714,6 +714,11 @@ struct NCCLTraceBuffer {
       bool includeStackTraces,
       bool onlyActive);
 };
+
+// Check for NaNs in a tensor on a given stream. If any are found, throw a
+// device-side error.
+void checkForNan(const at::Tensor& tensor, at::cuda::CUDAStream& stream);
+
 } // namespace c10d
 
 #endif // USE_C10D_NCCL
