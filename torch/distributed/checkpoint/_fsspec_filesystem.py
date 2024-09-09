@@ -1,6 +1,7 @@
 # Mypy will not try inferring the types of any 3rd party libraries installed.
 # mypy: ignore-errors
 
+import copy
 import io
 import os
 from contextlib import contextmanager
@@ -33,8 +34,16 @@ class FileSystem(FileSystemBase):
         self, path: Union[str, os.PathLike], mode: str
     ) -> Generator[io.IOBase, None, None]:
         assert self.fs is not None
-        with self.fs.transaction:
-            with fsspec.open(str(path), mode) as stream:
+
+        # fsspec transactions do not support concurrency and only allow
+        # 1 running transaction per filesystem. Because they do not
+        # guard against concurrent updates anyways, just create a new
+        # filesystem to isolate the transaction state. This is safe as
+        # long as we do not call `create_stream` concurrently on the
+        # same paths.
+        fs = copy.copy(self.fs)
+        with fs.transaction:
+            with fs.open(str(path), mode) as stream:
                 yield stream
 
     def concat_path(
@@ -51,7 +60,7 @@ class FileSystem(FileSystemBase):
     ) -> None:
         self.fs.rename(path, new_path)
 
-    def mkdir(self, path: [str, os.PathLike]) -> None:
+    def mkdir(self, path: Union[str, os.PathLike]) -> None:
         self.fs.makedirs(path, exist_ok=True)
 
     @classmethod
