@@ -2,7 +2,7 @@
 # mypy: ignore-errors
 from __future__ import annotations
 
-import copy
+import io
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -18,8 +18,6 @@ from torch.distributed.checkpoint.filesystem import (
 
 
 if TYPE_CHECKING:
-    import io
-
     from fsspec import AbstractFileSystem
 
 
@@ -38,17 +36,29 @@ class FileSystem(FileSystemBase):
         self, path: Union[str, os.PathLike], mode: str
     ) -> Generator[io.IOBase, None, None]:
         assert self.fs is not None
+        # _open only supports binary mode
+        if "b" not in mode:
+            with self.create_stream(path, mode.replace("t", "") + "b") as stream:
+                yield io.TextIOWrapper(stream)
+            return
 
-        # fsspec transactions do not support concurrency and only allow
-        # 1 running transaction per filesystem. Because they do not
-        # guard against concurrent updates anyways, just create a new
-        # filesystem to isolate the transaction state. This is safe as
-        # long as we do not call `create_stream` concurrently on the
-        # same paths.
-        fs = copy.copy(self.fs)
-        with fs.transaction:
-            with fs.open(str(path), mode) as stream:
+        # fsspec does not support concurrent transactions, so just
+        # manually handle commit/discard for each file.
+        #
+        # This is safe as long as you don't call `create_stream` on
+        # the same path concurrently
+        autocommit = "r" in mode
+        assert self.fs is not None
+        with self.fs._open(os.fspath(path), mode, autocommit=autocommit) as stream:
+            try:
                 yield stream
+            except:
+                if not autocommit:
+                    stream.discard()
+                raise
+            else:
+                if not autocommit:
+                    stream.commit()
 
     def concat_path(
         self, path: Union[str, os.PathLike], suffix: str
