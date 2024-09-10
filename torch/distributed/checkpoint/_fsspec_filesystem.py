@@ -1,15 +1,13 @@
 # Mypy will not try inferring the types of any 3rd party libraries installed.
 # mypy: ignore-errors
+from __future__ import annotations
 
 import copy
-import io
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Optional, Union
+from typing import TYPE_CHECKING, Generator, Optional, Union
 
-import fsspec
-from fsspec import AbstractFileSystem
 from fsspec.core import url_to_fs
 
 from torch.distributed.checkpoint.filesystem import (
@@ -17,6 +15,12 @@ from torch.distributed.checkpoint.filesystem import (
     FileSystemReader,
     FileSystemWriter,
 )
+
+
+if TYPE_CHECKING:
+    import io
+
+    from fsspec import AbstractFileSystem
 
 
 __all__ = [
