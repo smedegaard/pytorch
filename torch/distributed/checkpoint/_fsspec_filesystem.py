@@ -1,6 +1,5 @@
 # Mypy will not try inferring the types of any 3rd party libraries installed.
 # mypy: ignore-errors
-from __future__ import annotations
 
 import io
 import os
@@ -47,17 +46,16 @@ class FileSystem(FileSystemBase):
         #
         # This is safe as long as you don't call `create_stream` on
         # the same path concurrently
-        autocommit = "r" in mode
         assert self.fs is not None
-        with self.fs._open(os.fspath(path), mode, autocommit=autocommit) as stream:
+        with self.fs._open(os.fspath(path), mode, autocommit=False) as stream:
             try:
                 yield stream
-            except:
-                if not autocommit:
+            except:  # noqa: E722
+                if stream.writable():
                     stream.discard()
                 raise
             else:
-                if not autocommit:
+                if stream.writable():
                     stream.commit()
 
     def concat_path(
