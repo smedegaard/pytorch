@@ -377,7 +377,7 @@ class BaseSchedulerNode:
     def has_side_effects(self) -> bool:
         return False
 
-    def decide_inplace_update(self) -> None:
+    def decide_inplace_update(self, fused_nodes: Optional[Set[str]] = None) -> None:
         """
         Decide if there should be inplace updates for the node
         and record the decision in the active kernel.
@@ -419,6 +419,11 @@ class BaseSchedulerNode:
                     and V.graph.wrapper_code.can_reuse(input_buf, self)
                     and not isinstance(input_buf.defining_op, NopKernelSchedulerNode)
                 ):
+                    # If the writers of input_buf are in the same FusedSchedulerNode as the current op, then there is
+                    # no need to inline.
+                    if fused_nodes and input_buf.defining_op.get_name() in fused_nodes:
+                        continue
+
                     assert input_buf.users is not None
                     remaining_uses = [
                         x
@@ -973,7 +978,10 @@ class SchedulerNode(BaseSchedulerNode):
         return self.node if isinstance(self.node, ir.TemplateBuffer) else None
 
     def run(self, *index_vars: Sequence[sympy.Expr]) -> None:
-        self.decide_inplace_update()
+        node_names = {
+            n.get_name() for n in self.get_nodes() if isinstance(n, BaseSchedulerNode)
+        }
+        self.decide_inplace_update(node_names)
         self.mark_run()
         self.codegen(index_vars)
 

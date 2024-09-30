@@ -3823,7 +3823,14 @@ class CppKernelProxy(CppKernel):
         self.data_type_propagation(nodes)
         assert len(nodes) >= 1
 
-        def fn(node, *index_vars):
+        def node_names(node) -> set[str]:
+            return {
+                n.get_name()
+                for n in node.get_nodes()
+                if isinstance(n, BaseSchedulerNode)
+            }
+
+        def fn(node, fused_node_names: List[str], *index_vars):
             node.decide_inplace_update()
             node.mark_run()
             if isinstance(V.kernel, NullKernelHandler):
@@ -3831,7 +3838,7 @@ class CppKernelProxy(CppKernel):
             else:
                 return node.codegen(index_vars)
 
-        fn_list = [functools.partial(fn, node) for node in nodes]
+        fn_list = [functools.partial(fn, node, node_names(node)) for node in nodes]
 
         if (
             isinstance(V.local_buffer_context, LocalBufferContext)
