@@ -327,15 +327,6 @@ jobs:
           echo "DOCKER_CONTAINER_ID=${container_name}" >> "${GITHUB_ENV}"
 
           if [[ ${BUILD_ENVIRONMENT} == *"s390x"* ]]; then
-            # building grpcio requires system openssl on s390x
-            # protobuf is required for onnx
-            docker exec -t "${container_name}" sh -c "dnf install -y protobuf-devel protobuf-c-devel protobuf-lite-devel ; env GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=True pip3 install grpcio==1.65.4"
-
-            # ml_dtypes isn't built for s390x, and last release fails to build
-            # upstream already patched build system to build with newer numpy, apply those changes
-            # build and install ml_dtypes
-            docker exec -t "${container_name}" sh -c "dnf install -y wget patch && cd ~ && git clone https://github.com/jax-ml/ml_dtypes && cd ml_dtypes && git checkout v0.4.0 && git submodule update --init --recursive && wget https://github.com/jax-ml/ml_dtypes/commit/b969f76914d6b30676721bc92bf0f6021a0d1321.patch && wget https://github.com/jax-ml/ml_dtypes/commit/d4e6d035ecda073eab8bcf60f4eef572ee7087e6.patch && patch -p1 < b969f76914d6b30676721bc92bf0f6021a0d1321.patch && patch -p1 < d4e6d035ecda073eab8bcf60f4eef572ee7087e6.patch && python3 setup.py bdist_wheel && pip3 install dist/*.whl"
-
             docker exec -t "${container_name}" sh -c "pip3 install -r .ci/docker/requirements-ci.txt"
             docker exec -t "${container_name}" sh -c "pip3 install $(echo dist/*.whl)[opt-einsum] && ${TEST_COMMAND}"
           else
