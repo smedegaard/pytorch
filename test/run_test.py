@@ -72,7 +72,6 @@ from tools.testing.test_selections import (
 )
 
 from tools.testing.upload_artifacts import (
-    trigger_upload_test_stats_intermediate_workflow,
     zip_and_upload_artifacts,
 )
 
@@ -1678,10 +1677,6 @@ def run_tests(
     def handle_error_messages(failure: Optional[TestFailure]):
         if failure is None:
             return False
-        if IS_CI and options.upload_artifacts_while_running:
-            zip_and_upload_artifacts()
-            print("hello")
-            trigger_upload_test_stats_intermediate_workflow()
 
         failures.append(failure)
         print_to_stderr(failure.message)
@@ -1689,6 +1684,8 @@ def run_tests(
 
     def parallel_test_completion_callback(failure):
         test_failed = handle_error_messages(failure)
+        if IS_CI and options.upload_artifacts_while_running:
+            zip_and_upload_artifacts(test_failed)
         if (
             test_failed
             and not options.continue_through_error

@@ -1,11 +1,21 @@
+from functools import lru_cache
 import glob
 import os
+import time
 import zipfile
 from pathlib import Path
 
 import requests
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+LAST_UPDATED = 0
+
+
+@lru_cache(maxsize=1)
+def get_s3_resource():
+    import boto3  # type: ignore[import]
+
+    return boto3.client("s3")
 
 
 def zip_artifacts() -> str:
@@ -29,26 +39,33 @@ def upload_to_s3_artifacts(file_name: str) -> None:
     workflow_id = os.environ.get("GITHUB_RUN_ID")
     if not workflow_id:
         raise ValueError("GITHUB_RUN_ID is not set")
-    import boto3  # type: ignore[import]
 
-    S3_RESOURCE = boto3.client("s3")
-    S3_RESOURCE.upload_file(
+    get_s3_resource().upload_file(
         file_name,
         "gha-artifacts",
         f"pytorch/pytorch/{workflow_id}/{Path(file_name).name}",
     )
-    S3_RESOURCE.put_object(
-        Body=b'',
+    get_s3_resource().put_object(
+        Body=b"",
         Bucket="gha-artifacts",
         Key=f"catttest_deleteme/{workflow_id}.txt",
     )
 
-def zip_and_upload_artifacts() -> None:
-    file_name = zip_artifacts()
-    upload_to_s3_artifacts(file_name)
+
+def zip_and_upload_artifacts(failed: bool) -> None:
+    # not thread safe but correctness doesn't really matter for this,
+    # approximate is good enough
+    # Upload if a test failed or every 10 minutes
+    if failed or time.time() - LAST_UPDATED > 10 * 60:
+        global LAST_UPDATED
+        file_name = zip_artifacts()
+        upload_to_s3_artifacts(file_name)
+        LAST_UPDATED = time.time()
+        print("Uploaded artifacts to S3")
 
 
 def trigger_upload_test_stats_intermediate_workflow() -> None:
+    # The GITHUB_TOKEN cannot trigger workflow so this isn't used for now
     print("Triggering upload_test_stats_intermediate workflow")
     x = requests.post(
         "https://api.github.com/repos/pytorch/pytorch/actions/workflows/upload_test_stats_intermediate.yml/dispatches",
