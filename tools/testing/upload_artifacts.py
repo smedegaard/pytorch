@@ -56,12 +56,13 @@ def zip_and_upload_artifacts(failed: bool) -> None:
     # not thread safe but correctness doesn't really matter for this,
     # approximate is good enough
     # Upload if a test failed or every 10 minutes
+    global LAST_UPDATED
+
     if failed or time.time() - LAST_UPDATED > 10 * 60:
         global LAST_UPDATED
         file_name = zip_artifacts()
         upload_to_s3_artifacts(file_name)
         LAST_UPDATED = time.time()
-        print("Uploaded artifacts to S3")
 
 
 def trigger_upload_test_stats_intermediate_workflow() -> None:
