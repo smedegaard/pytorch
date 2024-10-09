@@ -59,7 +59,6 @@ def zip_and_upload_artifacts(failed: bool) -> None:
     global LAST_UPDATED
 
     if failed or time.time() - LAST_UPDATED > 10 * 60:
-        global LAST_UPDATED
         file_name = zip_artifacts()
         upload_to_s3_artifacts(file_name)
         LAST_UPDATED = time.time()
