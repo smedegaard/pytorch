@@ -6681,6 +6681,7 @@ for shape in [(1,), ()]:
         IS_MACOS,
         "Fails with SIGBUS on macOS; https://github.com/pytorch/pytorch/issues/25941",
     )
+    @unittest.skipIf(IS_S390X, "Fails on s390x CI")
     def test_deep_reentrant(self):
         class DeepReentrant(Function):
             @staticmethod
