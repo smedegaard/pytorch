@@ -98,7 +98,7 @@ def wrap_compiler_debug(
             # Call the compiler_fn - which is either aot_autograd or inductor
             # with fake inputs
             inner_compiled_fn = compiler_fn(gm, example_inputs)
-        except Exception as e:
+        except Exception:
             # TODO: Failures here are troublesome because no real inputs,
             # need a different serialization strategy
             if config.repro_after == "aot":
@@ -195,7 +195,7 @@ def wrap_compiler_debug(
                             torch.cuda.synchronize()
                             break
                     return out
-                except Exception as e:
+                except Exception:
                     if config.repro_level == 1:
                         dump_compiler_graph_state(
                             fx.GraphModule(gm, orig_graph),
@@ -252,10 +252,6 @@ isolate_fails_code_str = None
         model_str += _cuda_system_info_comment()
 
     model_str += NNModuleToString.convert(gm)
-
-    # get hint shape/stride when dynamic shape enabled
-    def hint_if_symint(x):
-        return tuple(i.node.hint if isinstance(i, torch.SymInt) else i for i in x)
 
     writer = InputWriter(save_dir)
     for placeholder, arg in zip(fx_placeholder_targets(gm), args):
