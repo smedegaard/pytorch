@@ -5,7 +5,7 @@ import io
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Generator, Optional, Union
+from typing import Generator, Optional, TYPE_CHECKING, Union
 
 from fsspec.core import url_to_fs
 
@@ -50,7 +50,7 @@ class FileSystem(FileSystemBase):
         with self.fs._open(os.fspath(path), mode, autocommit=False) as stream:
             try:
                 yield stream
-            except:  # noqa: E722
+            except:  # noqa: B001,E722
                 if stream.writable():
                     stream.discard()
                 raise
