@@ -1175,6 +1175,7 @@ def main():
         use_prioritized_text == ""
         and platform.system() == "Linux"
         and platform.processor() == "aarch64"
+        and cmake.get_cmake_cache_variables()["USE_CUDA"]
     ):
         print_box(
             """
