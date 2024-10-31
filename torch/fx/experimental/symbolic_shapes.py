@@ -71,7 +71,7 @@ from torch.utils._sympy.value_ranges import bound_sympy, SymPyValueRangeAnalysis
 from torch.utils._sympy.singleton_int import SingletonInt
 from torch.utils._traceback import format_frame, CapturedTraceback
 from torch._utils_internal import signpost_event
-from torch._subclasses.meta_utils import is_sparse_any
+from torch._subclasses.meta_utils import is_sparse_any, MetaNestedIntDesc, MetaCustomSizeStridesDesc
 import torch.utils._pytree as pytree
 from torch.utils._sympy.symbol import SymT, make_symbol, symbol_is_type
 
@@ -3011,6 +3011,8 @@ class ShapeEnv:
         source: Source,
         *,
         symbolic_context: Optional[SymbolicContext] = None,
+        metafy_fn: Optional[Callable] = None,
+        custom_size_strides: Optional[MetaCustomSizeStridesDesc] = None,
     ):
         """
         Returns a list of symbolic sizes and strides for the given tensor.
@@ -3029,6 +3031,9 @@ class ShapeEnv:
             [_is_dim_dynamic(ex, i) for i in range(ex.dim())],
             source,
             symbolic_context=symbolic_context,
+            metafy_fn=metafy_fn,
+            custom_size_strides=custom_size_strides,
+
         )
 
     # Dynamo may want to wrap FakeTensors with SymInt sizes up e.g. make_fx(opt_f(), tracing_mode="symbolic").
@@ -3083,6 +3088,8 @@ class ShapeEnv:
         source: Source,
         *,
         symbolic_context: Optional[SymbolicContext] = None,
+        metafy_fn = None,
+        custom_size_strides: Optional[MetaCustomSizeStridesDesc] = None,
     ):
         dim = len(ex_size)
 
@@ -3186,21 +3193,34 @@ class ShapeEnv:
                 )
         assert all(x is not None for x in stride)
 
+        # TODO(soulitzer): Maybe we can assume that these are always non-None
+        custom_size_strides_size = custom_size_strides.size if custom_size_strides is not None else [None] * dim
+        custom_size_strides_stride = custom_size_strides.stride if custom_size_strides is not None else [None] * dim
+
         sym_sizes = [
             self.create_symintnode(
                 sym,
                 hint=hint,
                 source=TensorPropertySource(source, TensorProperty.SIZE, i),
+                metafy_fn=metafy_fn,
+                mb_nested_int_desc=mb_nested_int,
             )
-            for i, (sym, hint) in enumerate(zip(size, ex_size))
+            for i, (sym, hint, mb_nested_int),  in enumerate(zip(size, ex_size, custom_size_strides_size))
         ]
         sym_stride = []
-        for i, stride_expr in enumerate(stride):
+        for i, (stride_expr, mb_nested_int) in enumerate(zip(stride, custom_size_strides_stride)):
             # NB: Don't duck size the stride; instead use the expression
             # we computed
             assert stride_expr is not None
-            sym_stride.append(self.create_symintnode(
-                stride_expr, hint=ex_stride[i], source=TensorPropertySource(source, TensorProperty.STRIDE, i)))
+            sym_stride.append(
+                self.create_symintnode(
+                    stride_expr,
+                    hint=ex_stride[i],
+                    source=TensorPropertySource(source, TensorProperty.STRIDE, i),
+                    metafy_fn=metafy_fn,
+                    mb_nested_int_desc=mb_nested_int,
+                )
+            )
         sym_storage_offset = self.create_symintnode(
             self.create_symbol(
                 ex_storage_offset,
@@ -3220,6 +3240,8 @@ class ShapeEnv:
             *,
             hint: Optional[int],
             source: Optional[Source] = None,
+            metafy_fn: Optional[Callable] = None,
+            mb_nested_int_desc: Optional[MetaNestedIntDesc] = None,
     ):
         """Create a SymInt value from a symbolic expression
 
@@ -3247,6 +3269,43 @@ class ShapeEnv:
             if hint is not None:
                 assert int(sym) == hint
             out = int(sym)
+        elif is_nested_int(hint) and mb_nested_int_desc is not None:
+            from torch._dynamo.source import (
+                SymNodePropertySource,
+                GetItemSource
+            )
+            from torch.nested._internal.nested_int import NestedIntNode
+            cache_src = SymNodePropertySource(source, "nested_int_cache")
+
+            # See Note [Recursive fakification]
+            cache_data = {}
+            fake_mode = None
+            for cache_key, cache_value in zip(mb_nested_int_desc.cache.keys, mb_nested_int_desc.cache.values):
+                fake_cache_value = metafy_fn(
+                    cache_value,
+                    GetItemSource(cache_src, cache_key),
+                ) if cache_value is not None else None
+                cache_data[cache_key] = fake_cache_value
+                fake_mode = fake_mode if fake_cache_value is None else fake_cache_value.fake_mode
+
+            cache = fake_mode.get_nested_cache(cache_data, cache_id=hint.node.nested_int())
+            coeff = hint.node.nested_int_coeff()
+
+            def construct():
+                return SymInt(
+                    SymNode(
+                        sym, self, int,
+                        SymInt(NestedIntNode(cache, coeff=coeff)),
+                        fx_node=fx_node,
+                    )
+                )
+            if coeff == 1:
+                # Participate in caching only if coeff is 1
+                if cache.id not in fake_mode.cache_id_to_symint:
+                    fake_mode.cache_id_to_symint[cache.id] = construct()
+                return fake_mode.cache_id_to_symint[cache.id]
+            else:
+                return construct()
         else:
             # How can this occur? When we mark_unbacked, we end up with a real
             # tensor that has hints for all sizes, but we MUST NOT create a

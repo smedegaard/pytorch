@@ -1,34 +1,126 @@
 # mypy: allow-untyped-defs
 from typing import *  # noqa: F403
 from typing import Tuple
+import weakref
 
 import torch
 from torch._C import DispatchKey, DispatchKeySet
 from torch._prims_common import is_expandable_to
-from torch.utils.weak import WeakTensorKeyDictionary
+from torch.utils.weak import WeakIdKeyDictionary, WeakTensorKeyDictionary
+from torch.nested._internal.nested_int import NestedIntNode
 
 
-_tensor_id_counter = 0
-_tensor_symint_registry = WeakTensorKeyDictionary()
+# _cache_id_registry = WeakIdKeyDictionary()
+# _cache_id_counter = 0
+
+# In eager, whenever we register cache
+# - update the cache_id <-> cache mappings
+# - update the offsets -> cache_id mapping
+
+# Maintain cache -> id: int mapping
+
+# Get the cache from the offsets, lengths, all the metadata
+# If any one of them already associated with a cache, return that one.
+# ignore lengths for now.
+# ignore devices for now, assume everything on cpu.
+
+# Given the metadata, get to the cache.
 
 
-def get_tensor_symint(tensor, *, coeff=1):
+class NestedCache():
+    # Do not construct/update this directly! Use the cache registry methods.
+    def __init__(self, *, data, id, fake_mode=None):
+        self.data = data
+        self.id = id
+        self.fake_mode_ref = weakref.ref(fake_mode) if fake_mode is not None else None
+
+    def state(self):
+        # This specifies what to specialize on.
+        # Specialize on whether the cache is None or not.
+        # TODO; also specialize on the
+        return tuple(k is not None for k in self.data.values())
+
+# The cache registry encapsulates the logic of creating and managing caches
+class CacheRegistry:
+    def __init__(self):
+        self._cache_id_to_cache_ref = {}
+        self._metadata_to_id = WeakTensorKeyDictionary()
+        self._cache_id_counter = 0
+
+    def new_cache(self, data):
+        cache_id = self._cache_id_counter
+        cache = NestedCache(data=data, id=cache_id)
+        for v in data.values():
+            if v is not None:
+                self._metadata_to_id[v] = cache_id
+        self._cache_id_counter += 1
+        self._cache_id_to_cache_ref[cache_id] = weakref.ref(cache)
+        return cache
+
+    def set_metadata(self, cache, key, value):
+        self._metadata_to_id[value] = cache.id
+        cache.data[key] = value
+
+    def get_cache_from_meta(self, metadata):
+        from torch._subclasses.functional_tensor import mb_unwrap_functional_tensor
+
+        # Why unwrap from here?
+        metadata = mb_unwrap_functional_tensor(metadata)
+        cache_id = self._metadata_to_id.get(metadata)
+        return self.get_cache_from_id(cache_id) if cache_id is not None else None
+
+    def get_cache_from_id(self, cache_id):
+        cache_ref = self._cache_id_to_cache_ref.get(cache_id)
+        if cache_ref is not None:
+            cache = cache_ref()
+            if cache is not None:
+                return cache
+            else:
+                # The cache has been garbage collected
+                del self._cache_id_to_cache_ref[cache_id]
+        return None
+
+    def copy(self):
+        new_registry = CacheRegistry()
+        new_registry._cache_id_to_cache_ref = self._cache_id_to_cache_ref.copy()
+        new_registry._metadata_to_id = self._metadata_to_id.copy()
+        new_registry._cache_id_counter = self._cache_id_counter
+        return new_registry
+
+_cache_registry = CacheRegistry()
+
+def get_nested_symint(cache: NestedCache, *, coeff=1):
+    # Assume that I have a cache that is registered somewhere.
+    # Assume that anything in the cache has been registered.
+    if cache.fake_mode_ref is not None:
+        # In compile, keep the same instance of nested int around
+        fake_mode = cache.fake_mode_ref()
+        assert fake_mode is not None
+        return fake_mode.get_nested_symint(cache) * coeff
+    else:
+        # In eager, always create a fresh nested int.
+        return torch.SymInt(NestedIntNode(
+            cache,
+            coeff=coeff
+        ))
+
+def get_nested_cache(*, offsets=None, lengths=None, coeff=1):
     from torch._subclasses.fake_tensor import FakeTensor
     from torch._subclasses.functional_tensor import mb_unwrap_functional_tensor
 
-    # NB: Only FakeTensor is associated with a memo
-    tensor = mb_unwrap_functional_tensor(tensor)
-    if isinstance(tensor, FakeTensor):
-        return tensor.get_nested_int(coeff=coeff)
-
-    global _tensor_id_counter
-
-    tensor_symint = _tensor_symint_registry.get(tensor)
-    if tensor_symint is None:
-        tensor_symint = torch._C._get_nested_int(_tensor_id_counter, coeff)
-        _tensor_id_counter += 1
-        _tensor_symint_registry[tensor] = tensor_symint
-    return tensor_symint
+    t = mb_unwrap_functional_tensor(offsets)
+    if isinstance(t, FakeTensor):
+        # In compile, handle everything through the fake mode
+        return t.fake_mode.get_nested_cache({"offsets": offsets})
+    else:
+        # Check if a cache already exists for the given offsets
+        cache = _cache_registry.get_cache_from_meta(offsets)
+        if cache is None:
+            cache = _cache_registry.new_cache({
+                "offsets": offsets,
+                "lengths": lengths,
+            })
+        return cache
 
 
 # SDPA metadata; max / min seqlens are needed for e.g. flash
@@ -87,10 +179,9 @@ class NestedTensor(torch.Tensor):
         assert not isinstance(values, NestedTensor)
         assert values.device == offsets.device
 
-        # Query cache for the symint associated with offsets or lengths
-        # (create a new one if needed).
-        ragged_source = offsets if lengths is None else lengths
-        ragged_size = get_tensor_symint(ragged_source, coeff=1)
+        cache = get_nested_cache(offsets=offsets, lengths=lengths)
+        ragged_size = get_nested_symint(cache, coeff=1)
+
         _ragged_idx = kwargs.get("_ragged_idx", 1)
         B = offsets.shape[0] - 1
         if lengths is not None:
@@ -248,8 +339,6 @@ class NestedTensor(torch.Tensor):
 
     @staticmethod
     def __tensor_unflatten__(inner_tensors: Dict, meta, outer_size, outer_stride):
-        from torch._subclasses.fake_tensor import FakeTensor
-
         # inner tensors: _values, _offsets, [_lengths], [_min_seqlen], [_max_seqlen]
         assert len(inner_tensors) >= 2 and len(inner_tensors) <= 5
         values = inner_tensors["_values"]
@@ -264,13 +353,6 @@ class NestedTensor(torch.Tensor):
         if max_seqlen_tensor is not None:
             metadata_cache["max_seqlen"] = max_seqlen_tensor
         ragged_idx = meta["ragged_idx"]
-
-        # Alternatively, we could make it the caller's responsibility to
-        # cache it. But this heuristic seems simple enough.
-        ragged_source = offsets if lengths is None else lengths
-        if isinstance(ragged_source, FakeTensor):
-            ragged_size = outer_size[ragged_idx]
-            ragged_source.nested_int_memo = ragged_size
 
         return NestedTensor(
             values,
