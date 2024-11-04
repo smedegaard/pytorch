@@ -325,11 +325,11 @@ class ReplicateTest(MultiProcessInductorTestCase):
         code = self._test_bucketing()
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         fc = FileCheck()
-        for i in range(3):
+        for _ in range(3):
             fc.check("cpp_fused_").check(
                 "torch.ops._c10d_functional.all_reduce_coalesced_.default("
             )
-        for i in range(3):
+        for _ in range(3):
             fc.check("torch.ops._c10d_functional.wait_tensor.default")
 
         fc.run(code)
@@ -338,11 +338,11 @@ class ReplicateTest(MultiProcessInductorTestCase):
         code = self._test_bucketing(init_process_group=False, loop=2)
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         fc = FileCheck()
-        for i in range(3):
+        for _ in range(3):
             fc.check("cpp_fused_").check(
                 "torch.ops._c10d_functional.all_reduce_coalesced_.default("
             )
-        for i in range(3):
+        for _ in range(3):
             fc.check("torch.ops._c10d_functional.wait_tensor.default")
 
         fc.run(code)
@@ -363,11 +363,11 @@ class ReplicateTest(MultiProcessInductorTestCase):
         code = self._test_bucketing()
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         fc = FileCheck()
-        for i in range(3):
+        for _ in range(3):
             fc.check("aten.flatten.using_ints(").check("cpp_fused_").check(
                 "torch.ops._c10d_functional.all_reduce_.default("
             )
-        for i in range(3):
+        for _ in range(3):
             fc.check("torch.ops._c10d_functional.wait_tensor.default")
         fc.run(code)
 
@@ -375,11 +375,11 @@ class ReplicateTest(MultiProcessInductorTestCase):
         code = self._test_bucketing(init_process_group=False, loop=2)
         self.assertEqual(counters["inductor"]["ddp_buckets"], 3)
         fc = FileCheck()
-        for i in range(3):
+        for _ in range(3):
             fc.check("aten.flatten.using_ints(").check("cpp_fused_").check(
                 "torch.ops._c10d_functional.all_reduce_.default("
             )
-        for i in range(3):
+        for _ in range(3):
             fc.check("torch.ops._c10d_functional.wait_tensor.default")
         fc.run(code)
 
