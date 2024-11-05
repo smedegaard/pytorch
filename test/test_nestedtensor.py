@@ -57,6 +57,7 @@ from torch.testing._internal.common_utils import (
     markDynamoStrictTest,
     NestedTensorTestCase,
     parametrize,
+    reparametrize,
     run_tests,
     skipIfSlowGradcheckEnv,
     skipIfTorchDynamo,
@@ -64,7 +65,10 @@ from torch.testing._internal.common_utils import (
     TEST_WITH_ROCM,
     xfailIfTorchDynamo,
 )
-from torch.testing._internal.opinfo.definitions.nested import njt_op_db
+from torch.testing._internal.opinfo.definitions.nested import (
+    include_dim_type_and_contiguity,
+    njt_op_db,
+)
 from torch.utils._pytree import tree_flatten
 from torch.utils.checkpoint import checkpoint, create_selective_checkpoint_contexts
 
@@ -7859,7 +7863,20 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
     @withXFails(FORWARD_FAILURES)
     @ops([op for op in njt_op_db if op.supports_njt], allowed_dtypes=(torch.float32,))
     def test_forward(self, device, dtype, op):
-        for sample in op.sample_inputs(device=device, dtype=dtype, requires_grad=False):
+    # @reparametrize(
+    #     ops(
+    #         [op for op in njt_op_db if op.supports_njt], allowed_dtypes=(torch.float32,)
+    #     ),
+    #     include_dim_type_and_contiguity,
+    # )
+    # def test_forward(self, device, dtype, op, dim_type, contiguity):
+        for sample in op.sample_inputs(
+            device=device,
+            dtype=dtype,
+            requires_grad=False,
+            # dim_type=dim_type,
+            # contiguity=contiguity,
+        ):
             # compare to reference, but expect different nested int
             out = op.op(sample.input, *sample.args, **sample.kwargs)
             out_ref = op.ref(op, sample)
@@ -7872,12 +7889,21 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
                 self.assertEqualIgnoringNestedInts(sample.input, out_ref)
 
     @withXFails(BACKWARD_FAILURES)
-    @ops(
-        [op for op in njt_op_db if op.supports_njt and op.supports_autograd],
-        allowed_dtypes=(torch.float32,),
+    @reparametrize(
+        ops(
+            [op for op in njt_op_db if op.supports_njt and op.supports_autograd],
+            allowed_dtypes=(torch.float32,),
+        ),
+        include_dim_type_and_contiguity,
     )
-    def test_backward(self, device, dtype, op):
-        for sample in op.sample_inputs(device=device, dtype=dtype, requires_grad=True):
+    def test_backward(self, device, dtype, op, dim_type, contiguity):
+        for sample in op.sample_inputs(
+            device=device,
+            dtype=dtype,
+            requires_grad=True,
+            dim_type=dim_type,
+            contiguity=contiguity,
+        ):
             # compare to reference, but expect different nested int
             out = op.op(sample.input, *sample.args, **sample.kwargs)
             out_ref = op.ref(op, sample)
@@ -7904,9 +7930,20 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
 
     @withXFails(COMPILE_FORWARD_FAILURES)
     @torch._dynamo.config.patch(capture_dynamic_output_shape_ops=True)
-    @ops([op for op in njt_op_db if op.supports_njt], allowed_dtypes=(torch.float32,))
-    def test_compile_forward(self, device, dtype, op):
-        for sample in op.sample_inputs(device=device, dtype=dtype, requires_grad=False):
+    @reparametrize(
+        ops(
+            [op for op in njt_op_db if op.supports_njt], allowed_dtypes=(torch.float32,)
+        ),
+        include_dim_type_and_contiguity,
+    )
+    def test_compile_forward(self, device, dtype, op, dim_type, contiguity):
+        for sample in op.sample_inputs(
+            device=device,
+            dtype=dtype,
+            requires_grad=False,
+            dim_type=dim_type,
+            contiguity=contiguity,
+        ):
             torch.compiler.reset()
 
             op_fn = op.op
@@ -7953,13 +7990,22 @@ class TestNestedTensorOpInfo(NestedTensorTestCase):
                         compiled_in_f(sample.input, *sample.args, **sample.kwargs)
 
     @withXFails(COMPILE_BACKWARD_FAILURES)
-    @ops(
-        [op for op in njt_op_db if op.supports_njt and op.supports_autograd],
-        allowed_dtypes=(torch.float32,),
+    @reparametrize(
+        ops(
+            [op for op in njt_op_db if op.supports_njt and op.supports_autograd],
+            allowed_dtypes=(torch.float32,),
+        ),
+        include_dim_type_and_contiguity,
     )
     @torch._dynamo.config.patch(capture_dynamic_output_shape_ops=True)
-    def test_compile_backward(self, device, dtype, op):
-        for sample in op.sample_inputs(device=device, dtype=dtype, requires_grad=True):
+    def test_compile_backward(self, device, dtype, op, dim_type, contiguity):
+        for sample in op.sample_inputs(
+            device=device,
+            dtype=dtype,
+            requires_grad=True,
+            dim_type=dim_type,
+            contiguity=contiguity,
+        ):
             torch.compiler.reset()
 
             op_fn = op.op
