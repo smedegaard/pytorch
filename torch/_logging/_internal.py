@@ -911,6 +911,13 @@ def _reset_logs():
 
     trace_log.propagate = False
     _clear_handlers(trace_log)
+    # Re-register the 'not_implemented' artifact after resetting logs
+    register_artifact(
+        'not_implemented',
+        'Description for not_implemented',
+        visible=True,
+        off_by_default=False,
+    )
 
 
 def _get_log_state():
