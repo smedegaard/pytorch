@@ -6206,6 +6206,20 @@ def forward(self, s0 : torch.SymInt, s1 : torch.SymInt, L_x_ : torch.Tensor):
         with torch.device("cpu"):
             self.assertEqual(res, split(x))
 
+    def test_symint_bitwise(self):
+        def fn(x):
+            z = x.shape[0]
+            z |= z >> 1
+            z |= z << 1
+            z &= z
+            # test composition with non-bitwise ops
+            z = (z | z) % 6
+            return z
+
+        opt_fn = torch.compile(fn, backend="eager", dynamic=True, fullgraph=True)
+        inp = torch.randn(3, 3)
+        self.assertEqual(fn(inp), opt_fn(inp))
+
 
 instantiate_parametrized_tests(ReproTests)
 
