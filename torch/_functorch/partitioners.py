@@ -1924,7 +1924,7 @@ def min_cut_rematerialization_partition(
     if AOT_PARTITIONER_DEBUG:
         sorted_sizes = sorted([(_size_of(i), str(i)) for i in saved_values])
         logger.debug(
-            "Theoretical Activations Stored: ",
+            "Theoretical Activations Stored: %f",
             sum(_size_of(i) for i in saved_values) / 1e9,
         )
         logger.debug(
