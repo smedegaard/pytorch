@@ -38,6 +38,7 @@ from .utils import (
     root_module_when_exporting_non_strict,
     unlift_tokens,
 )
+from .comms import raise_fsdp2_backward_all_gather_ops
 
 
 aot_graphs_log = getArtifactLogger(__name__, "aot_graphs")
@@ -177,6 +178,9 @@ def aot_dispatch_base_graph(
         output_node.args = ((*add_nodes, *output_node.args[0]),)
 
         hook.remove()  # type: ignore[possibly-undefined]
+
+    if not torch._dynamo.config.skip_fsdp_hooks:
+        fw_module.graph = raise_fsdp2_backward_all_gather_ops(fw_module.graph)
 
     # As long as we opted to remove input mutations, then
     # there should be *NO* mutating ops in the graph at this point.
