@@ -726,6 +726,19 @@ class TritonCSEVariable(CSEVariable):
                 # those reads should subsequently be masked,
                 self.mask_vars.update({f"{arg.name[0]}mask"})
 
+def _maybe_upcast_float32(op: str, args: Sequence[str]) -> str:
+    """
+    Codegen helper to upcast arguments to float32, depending on the config and dtype.
+    This is used for libdevice and tl.math calls.
+    """
+    dtype = args[0].dtype
+    needs_upcast = not config.triton.codegen_upcast_to_fp32 and dtype in (torch.float16, torch.bfloat16)
+    orig_dtype = triton_type(dtype)
+    upcast_string = ".to(tl.float32)" if needs_upcast else ""
+    downcast_string = f".to({orig_dtype})" if needs_upcast else ""
+    arg_string = ",".join(f"{arg}{upcast_string}" for arg in args)
+    return f"{op}({arg_string}){downcast_string}"
+
 
 class TritonOverrides(OpOverrides):
     """Map element-wise ops to Triton"""
@@ -832,42 +845,35 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def abs(x):
-        return f"tl_math.abs({x})"
+        return _maybe_upcast_float32("tl_math.abs", [x])
 
     @staticmethod
     def libdevice_abs(x):
-        return f"libdevice.abs({x})"
+        return _maybe_upcast_float32("libdevice.abs", [x])
 
     @staticmethod
     def exp(x):
-        return f"tl_math.exp({x})"
+        return _maybe_upcast_float32("tl_math.exp", [x])
 
     @staticmethod
     def libdevice_exp(x):
-        return f"libdevice.exp({x})"
+        return _maybe_upcast_float32("libdevice.exp", [x])
 
     @staticmethod
     def exp2(x):
-        return f"libdevice.exp2({x})"
+        return _maybe_upcast_float32("libdevice.exp2", [x])
 
     @staticmethod
     def expm1(x):
-        return f"libdevice.expm1({x})"
+        return _maybe_upcast_float32("libdevice.expm1", [x])
 
     @staticmethod
     def sqrt(x):
-        if config.triton.codegen_upcast_to_fp32:
-            return f"libdevice.sqrt({x})"
-        else:
-            needs_upcast = x.dtype in (torch.float16, torch.bfloat16)
-            orig_dtype = triton_type(x.dtype)
-            upcast_string = ".to(tl.float32)" if needs_upcast else ""
-            downcast_string = f".to({orig_dtype})" if needs_upcast else ""
-            return f"libdevice.sqrt({x}{upcast_string}){downcast_string}"
+        return _maybe_upcast_float32("libdevice.sqrt", [x])
 
     @staticmethod
     def libdevice_sqrt(x):
-        return f"libdevice.sqrt({x})"
+        return _maybe_upcast_float32("libdevice.sqrt", [x])
 
     @staticmethod
     def relu(x):
@@ -911,19 +917,19 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def cos(x):
-        return f"tl_math.cos({x})"
+        return _maybe_upcast_float32("tl_math.cos", [x])
 
     @staticmethod
     def libdevice_cos(x):
-        return f"libdevice.cos({x})"
+        return _maybe_upcast_float32("libdevice.cos", [x])
 
     @staticmethod
     def sin(x):
-        return f"tl_math.sin({x})"
+        return _maybe_upcast_float32("tl_math.sin", [x])
 
     @staticmethod
     def libdevice_sin(x):
-        return f"libdevice.sin({x})"
+        return _maybe_upcast_float32("libdevice.sin", [x])
 
     @classmethod
     def index_expr(cls, expr, dtype):
@@ -935,35 +941,35 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def lgamma(x):
-        return f"libdevice.lgamma({x})"
+        return _maybe_upcast_float32("libdevice.lgamma", [x])
 
     @staticmethod
     def erf(x):
-        return f"libdevice.erf({x})"
+        return _maybe_upcast_float32("libdevice.erf", [x])
 
     @staticmethod
     def cosh(x):
-        return f"libdevice.cosh({x})"
+        return _maybe_upcast_float32("libdevice.cosh", [x])
 
     @staticmethod
     def sinh(x):
-        return f"libdevice.sinh({x})"
+        return _maybe_upcast_float32("libdevice.sinh", [x])
 
     @staticmethod
     def acos(x):
-        return f"libdevice.acos({x})"
+        return _maybe_upcast_float32("libdevice.acos", [x])
 
     @staticmethod
     def acosh(x):
-        return f"libdevice.acosh({x})"
+        return _maybe_upcast_float32("libdevice.cosh", [x])
 
     @staticmethod
     def asin(x):
-        return f"libdevice.asin({x})"
+        return _maybe_upcast_float32("libdevice.asin", [x])
 
     @staticmethod
     def asinh(x):
-        return f"libdevice.asinh({x})"
+        return _maybe_upcast_float32("libdevice.asinh", [x])
 
     @staticmethod
     def atan2(x, y):
@@ -971,11 +977,11 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def atan(x):
-        return f"libdevice.atan({x})"
+        return _maybe_upcast_float32("libdevice.atan", [x])
 
     @staticmethod
     def atanh(x):
-        return f"libdevice.atanh({x})"
+        return _maybe_upcast_float32("libdevice.atanh", [x])
 
     @staticmethod
     def copysign(x, y):
@@ -995,11 +1001,11 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def log10(x):
-        return f"libdevice.log10({x})"
+        return _maybe_upcast_float32("libdevice.log10", [x])
 
     @staticmethod
     def log2(x):
-        return f"libdevice.log2({x})"
+        return _maybe_upcast_float32("libdevice.log2", [x])
 
     @staticmethod
     def nextafter(x, y):
@@ -1066,23 +1072,23 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def rsqrt(x):
-        return f"libdevice.rsqrt({x})"
+        return _maybe_upcast_float32("libdevice.rsqrt", [x])
 
     @staticmethod
     def log1p(x):
-        return f"libdevice.log1p({x})"
+        return _maybe_upcast_float32("libdevice.log1p", [x])
 
     @staticmethod
     def tan(x):
-        return f"libdevice.tan({x})"
+        return _maybe_upcast_float32("libdevice.tan", [x])
 
     @staticmethod
     def tanh(x):
-        return f"libdevice.tanh({x})"
+        return _maybe_upcast_float32("libdevice.tanh", [x])
 
     @staticmethod
     def sigmoid(x):
-        return f"tl.sigmoid({x})"
+        return _maybe_upcast_float32("libdevice.sigmoid", [x])
 
     @staticmethod
     def signbit(x):
@@ -1111,7 +1117,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def isnan(x):
-        return f"libdevice.isnan({x}).to(tl.int1)"
+        return _maybe_upcast_float32("libdevice.isnan", [x])
 
     @staticmethod
     def round(x):
@@ -1119,7 +1125,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def floor(x):
-        return f"libdevice.floor({x})"
+        return _maybe_upcast_float32("libdevice.floor", [x])
 
     @staticmethod
     def floordiv(a, b):
@@ -1150,7 +1156,7 @@ class TritonOverrides(OpOverrides):
 
     @staticmethod
     def ceil(x):
-        return f"libdevice.ceil({x})"
+        return _maybe_upcast_float32("libdevice.ceil", [x])
 
 
 TritonOverrides._initialize_pointwise_overrides("triton")
