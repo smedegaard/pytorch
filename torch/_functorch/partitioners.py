@@ -824,7 +824,7 @@ def solve_min_cut(
             if node.op == "call_function" and hasattr(node.target, "_overloadpacket")
         }
         ops_ignored = joint_module_ops - {str(i) for i in op_types.recomputable_ops}
-        logger.info("Ops banned from re-materialization: ", ops_ignored)
+        logger.info("Ops banned from re-materialization: %s", ops_ignored)
 
     def can_fuse_into_auto_functionalized(a, b):
         if b.target != torch.ops.higher_order.auto_functionalized:
