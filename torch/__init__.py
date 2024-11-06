@@ -2280,7 +2280,7 @@ class _TorchCompileInductorWrapper:
                 raise RuntimeError(
                     f"Unexpected optimization option {key}, known options are {list(current_config.keys())}"
                 )
-            if type(val) is not type(current_config[attr_name]):
+            if not isinstance(val, config.get_type(attr_name)):
                 val_type_str = type(val).__name__
                 expected_type_str = type(current_config[attr_name]).__name__
                 raise RuntimeError(

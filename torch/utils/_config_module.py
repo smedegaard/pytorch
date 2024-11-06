@@ -5,12 +5,23 @@ import inspect
 import io
 import os
 import pickle
+import sys
 import tokenize
 import unittest
 import warnings
 from dataclasses import dataclass
 from types import FunctionType, ModuleType
-from typing import Any, Callable, Dict, List, NoReturn, Optional, Set, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    get_type_hints,
+    List,
+    NoReturn,
+    Optional,
+    Set,
+    Union,
+)
 from typing_extensions import deprecated
 from unittest import mock
 
@@ -70,6 +81,10 @@ def install_config_module(module: ModuleType) -> None:
         prefix: str,
     ) -> None:
         """Walk the module structure and move everything to module._config"""
+        if sys.version_info[:2] < (3, 10):
+            type_hints = getattr(source, "__annotations__", {})
+        else:
+            type_hints = inspect.get_annotations(source)
         for key, value in list(source.__dict__.items()):
             if (
                 key.startswith("__")
@@ -82,11 +97,15 @@ def install_config_module(module: ModuleType) -> None:
 
             name = f"{prefix}{key}"
             if isinstance(value, CONFIG_TYPES):
-                config[name] = _ConfigEntry(Config(default=value))
+                annotated_type = type_hints.get(key, None)
+                config[name] = _ConfigEntry(
+                    Config(default=value), value_type=annotated_type
+                )
                 if dest is module:
                     delattr(module, key)
             elif isinstance(value, Config):
-                config[name] = _ConfigEntry(value)
+                annotated_type = type_hints.get(key, None)
+                config[name] = _ConfigEntry(value, value_type=annotated_type)
                 if dest is module:
                     delattr(module, key)
             elif isinstance(value, type):
@@ -162,14 +181,17 @@ _UNSET_SENTINEL = object()
 class _ConfigEntry:
     # The default value specified in the configuration
     default: Any
+    # The type of the configuration value
+    value_type: type
     # The value specified by the user when they overrode the configuration
     # _UNSET_SENTINEL indicates the value is not set.
     user_override: Any = _UNSET_SENTINEL
     # The justknob to check for this config
     justknob: Optional[str] = None
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, value_type: Optional[type]):
         self.default = config.default
+        self.value_type = value_type if value_type is not None else type(self.default)
         self.justknob = config.justknob
 
 
@@ -267,6 +289,9 @@ class ConfigModule(ModuleType):
                 continue
             config[key] = copy.deepcopy(getattr(self, key))
         return config
+
+    def get_type(self, config_name: str) -> type:
+        return self._config[config_name].value_type
 
     def save_config(self) -> bytes:
         """Convert config to a pickled blob"""
