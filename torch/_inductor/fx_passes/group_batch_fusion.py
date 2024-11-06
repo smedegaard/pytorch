@@ -178,7 +178,7 @@ class PostGradBatchLinearFusion(BatchFusion):
     def _addmm_node_can_be_fused(self, node: torch.fx.Node) -> bool:
         # pyre-fixme[7]: Incompatible return type
         return (
-            node.kwargs.get("beta", 1.0) == 1.0 and node.kwargs.get("alpha", 1.0) == 1.0  # type: ignore[return-value]
+            node.kwargs.get("beta", 1) == 1 and node.kwargs.get("alpha", 1) == 1  # type: ignore[return-value]
         )
 
     def _is_input_2d(self, input: torch.fx.Node) -> bool:
@@ -303,8 +303,8 @@ class GroupLinearFusion(GroupFusion):
         input_shape = node.args[1].meta["val"].shape  # type: ignore[union-attr]
         weight_shape = node.args[2].meta["val"].shape  # type: ignore[union-attr]
         return (
-            node.kwargs.get("beta", 1.0) == 1.0
-            and node.kwargs.get("alpha", 1.0) == 1.0
+            node.kwargs.get("beta", 1) == 1
+            and node.kwargs.get("alpha", 1) == 1
             and len(input_shape) == 2
             and len(weight_shape) == 2
             and all(x % 2 == 0 for x in input_shape + weight_shape)
@@ -411,7 +411,7 @@ class BatchPointwiseMathOpsPostGradFusion(BatchPointwiseOpsFusionFactory):
         if CallFunctionVarArgs(self.op).match(
             node
         ) and self._pointwise_node_can_be_fused(node):
-            alpha = node.kwargs.get("alpha", 1.0)
+            alpha = node.kwargs.get("alpha", 1)
             rounding_mode = node.kwargs.get("rounding_mode", None)
             input, other = node.args
             shape = list(input.meta["val"].shape)  # type: ignore[union-attr]
@@ -445,7 +445,7 @@ class BatchPointwiseMathOpsPostGradFusion(BatchPointwiseOpsFusionFactory):
 
     def fuse(self, graph: torch.fx.GraphModule, subset: List[torch.fx.Node]):
         batch_inputs, batch_others = [], []
-        alpha = subset[0].kwargs.get("alpha", 1.0)
+        alpha = subset[0].kwargs.get("alpha", 1)
         batch_inputs_meta, batch_others_meta = [], []
 
         for node in subset:
