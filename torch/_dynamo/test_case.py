@@ -55,6 +55,7 @@ class TestCase(TorchTestCase):
                 raise_on_ctx_manager_usage=True,
                 suppress_errors=False,
                 log_compilation_metrics=False,
+                run_extra_validations=True,
             ),
         )
 
